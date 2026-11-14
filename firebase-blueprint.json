@@ -1,0 +1,190 @@
+{
+  "entities": {
+    "UserWorkspace": {
+      "title": "User Workspace",
+      "description": "User SEO autopilot configuration, brand voice, plan state, and tracked content queue.",
+      "type": "object",
+      "properties": {
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "domain": {
+          "type": "string",
+          "maxLength": 253
+        },
+        "brandName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "industry": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "audience": {
+          "type": "string",
+          "maxLength": 600
+        },
+        "toneRules": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "contentPillars": {
+          "type": "array",
+          "description": "Up to 12 core topic pillars."
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "cadence": {
+          "type": "string",
+          "enum": ["daily", "3x_week", "weekly"]
+        },
+        "connectedCms": {
+          "type": "string",
+          "enum": ["WordPress", "Shopify", "Webflow", "Ghost", "Webhook", "None"]
+        },
+        "webhookUrl": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "gscConnected": {
+          "type": "boolean"
+        },
+        "gscProperty": {
+          "type": "string",
+          "maxLength": 255
+        },
+        "planTier": {
+          "type": "string",
+          "enum": ["Starter", "Growth Autopilot", "Agency Scale"]
+        },
+        "billingCadence": {
+          "type": "string",
+          "enum": ["monthly", "quarterly", "annual"]
+        },
+        "trackedKeywords": {
+          "type": "array",
+          "description": "Up to 100 tracked keyword objects."
+        },
+        "autopilotQueue": {
+          "type": "array",
+          "description": "Up to 100 scheduled or published articles."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerUid",
+        "domain",
+        "brandName",
+        "language",
+        "cadence",
+        "connectedCms",
+        "gscConnected",
+        "planTier",
+        "billingCadence",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UserPrivateProfile": {
+      "title": "User Private Profile",
+      "description": "Isolated PII record containing authenticated user email and display name.",
+      "type": "object",
+      "properties": {
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerUid", "email", "displayName", "updatedAt"]
+    },
+    "SiteAuditRecord": {
+      "title": "Site Audit Record",
+      "description": "Historical technical SEO audit snapshot owned by the user.",
+      "type": "object",
+      "properties": {
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "domain": {
+          "type": "string",
+          "maxLength": 253
+        },
+        "score": {
+          "type": "number"
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 1500
+        },
+        "organicMonthlyTraffic": {
+          "type": "number"
+        },
+        "organicKeywords": {
+          "type": "number"
+        },
+        "backlinks": {
+          "type": "number"
+        },
+        "domainAuthority": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerUid",
+        "domain",
+        "score",
+        "summary",
+        "organicMonthlyTraffic",
+        "organicKeywords",
+        "backlinks",
+        "domainAuthority",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserWorkspace" },
+      "description": "Per-user SEO workspace document storing brand voice, cadence, CMS settings, tracked keywords, and article queue."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateProfile" },
+      "description": "Isolated PII profile document strictly readable and writable only by the verified owner."
+    },
+    "/users/{userId}/audits/{auditId}": {
+      "schema": { "$ref": "#/entities/SiteAuditRecord" },
+      "description": "Per-user saved technical SEO audit snapshots."
+    }
+  }
+}

@@ -1,0 +1,209 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isValidWorkspace(data) {
+      return data.keys().hasAll([
+          'ownerUid',
+          'domain',
+          'brandName',
+          'language',
+          'cadence',
+          'connectedCms',
+          'gscConnected',
+          'planTier',
+          'billingCadence',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerUid',
+          'domain',
+          'brandName',
+          'industry',
+          'audience',
+          'toneRules',
+          'contentPillars',
+          'language',
+          'cadence',
+          'connectedCms',
+          'webhookUrl',
+          'gscConnected',
+          'gscProperty',
+          'planTier',
+          'billingCadence',
+          'trackedKeywords',
+          'autopilotQueue',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.ownerUid == request.auth.uid
+        && isValidId(data.ownerUid)
+        && data.domain is string && data.domain.size() <= 253
+        && data.brandName is string && data.brandName.size() <= 120
+        && (!('industry' in data) || (data.industry is string && data.industry.size() <= 160))
+        && (!('audience' in data) || (data.audience is string && data.audience.size() <= 600))
+        && (!('toneRules' in data) || (data.toneRules is string && data.toneRules.size() <= 1000))
+        && (!('contentPillars' in data) || (data.contentPillars is list && data.contentPillars.size() <= 12 && (data.contentPillars.size() == 0 || data.contentPillars[0] is string)))
+        && data.language is string && data.language.size() > 0 && data.language.size() <= 40
+        && data.cadence in ['daily', '3x_week', 'weekly']
+        && data.connectedCms in ['WordPress', 'Shopify', 'Webflow', 'Ghost', 'Webhook', 'None']
+        && (!('webhookUrl' in data) || (data.webhookUrl is string && data.webhookUrl.size() <= 500))
+        && data.gscConnected is bool
+        && (!('gscProperty' in data) || (data.gscProperty is string && data.gscProperty.size() <= 255))
+        && data.planTier in ['Starter', 'Growth Autopilot', 'Agency Scale']
+        && data.billingCadence in ['monthly', 'quarterly', 'annual']
+        && (!('trackedKeywords' in data) || (data.trackedKeywords is list && data.trackedKeywords.size() <= 100 && (data.trackedKeywords.size() == 0 || data.trackedKeywords[0] is map)))
+        && (!('autopilotQueue' in data) || (data.autopilotQueue is list && data.autopilotQueue.size() <= 100 && (data.autopilotQueue.size() == 0 || data.autopilotQueue[0] is map)))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPrivateProfile(data) {
+      return data.keys().hasAll(['ownerUid', 'email', 'displayName', 'updatedAt'])
+        && data.keys().hasOnly(['ownerUid', 'email', 'displayName', 'updatedAt'])
+        && data.ownerUid == request.auth.uid
+        && isValidId(data.ownerUid)
+        && data.email is string && data.email.size() > 0 && data.email.size() <= 254
+        && data.displayName is string && data.displayName.size() <= 120
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAuditRecord(data) {
+      return data.keys().hasAll([
+          'ownerUid',
+          'domain',
+          'score',
+          'summary',
+          'organicMonthlyTraffic',
+          'organicKeywords',
+          'backlinks',
+          'domainAuthority',
+          'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerUid',
+          'domain',
+          'score',
+          'summary',
+          'organicMonthlyTraffic',
+          'organicKeywords',
+          'backlinks',
+          'domainAuthority',
+          'createdAt'
+        ])
+        && data.ownerUid == request.auth.uid
+        && isValidId(data.ownerUid)
+        && data.domain is string && data.domain.size() > 0 && data.domain.size() <= 253
+        && data.score is number && data.score >= 0 && data.score <= 100
+        && data.summary is string && data.summary.size() <= 1500
+        && data.organicMonthlyTraffic is number && data.organicMonthlyTraffic >= 0
+        && data.organicKeywords is number && data.organicKeywords >= 0
+        && data.backlinks is number && data.backlinks >= 0
+        && data.domainAuthority is number && data.domainAuthority >= 0 && data.domainAuthority <= 100
+        && data.createdAt is timestamp;
+    }
+
+    // Boot connection test document (read-only)
+    match /test/connection {
+      allow get: if true;
+    }
+
+    // User Workspace Document (never listable across users)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidWorkspace(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isValidWorkspace(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'domain',
+          'brandName',
+          'industry',
+          'audience',
+          'toneRules',
+          'contentPillars',
+          'language',
+          'cadence',
+          'connectedCms',
+          'webhookUrl',
+          'gscConnected',
+          'gscProperty',
+          'planTier',
+          'billingCadence',
+          'trackedKeywords',
+          'autopilotQueue',
+          'updatedAt'
+        ]);
+      allow delete: if false;
+
+      // Isolated PII Profile
+      match /private/{docId} {
+        allow get: if isValidId(userId) && isValidId(docId) && docId == 'profile' && isOwner(userId);
+        allow create: if isValidId(userId)
+          && isValidId(docId)
+          && docId == 'profile'
+          && isOwner(userId)
+          && isValidPrivateProfile(incoming())
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(userId)
+          && isValidId(docId)
+          && docId == 'profile'
+          && isOwner(userId)
+          && isValidPrivateProfile(incoming())
+          && incoming().ownerUid == existing().ownerUid
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'displayName', 'updatedAt']);
+        allow delete: if false;
+      }
+
+      // Per-user Site Audit History
+      match /audits/{auditId} {
+        allow get: if isValidId(userId) && isValidId(auditId) && isOwner(userId);
+        allow list: if isOwner(userId) && resource.data.ownerUid == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(auditId)
+          && isOwner(userId)
+          && isValidAuditRecord(incoming())
+          && incoming().createdAt == request.time;
+        allow update, delete: if false;
+      }
+    }
+  }
+}

@@ -1,17 +1,51 @@
 export interface KeywordData {
   keyword: string;
   searchVolume: number;
-  difficulty: string; // "Low", "Medium", "High"
-  intent: string; // "Informational", "Commercial", "Transactional"
+  difficulty: 'Low' | 'Medium' | 'High' | string;
+  intent: 'Informational' | 'Commercial' | 'Transactional' | 'AI Search' | string;
+  cpcEstimate?: string;
+  articleTitleIdea?: string;
+  tracked?: boolean;
+}
+
+export interface BrandProfile {
+  domain: string;
+  brandName: string;
+  industry: string;
+  audience: string;
+  toneRules: string;
+  contentPillars: string[];
+  language: string;
+  cadence: 'daily' | '3x_week' | 'weekly';
+  connectedCms: 'WordPress' | 'Shopify' | 'Webflow' | 'Ghost' | 'Webhook' | 'None';
+  webhookUrl: string;
+  gscConnected: boolean;
+  gscProperty: string;
+  lastScannedAt?: string;
+}
+
+export interface AutopilotArticle {
+  id: string;
+  title: string;
+  keyword: string;
+  scheduledDate: string;
+  status: 'Scheduled' | 'Draft Ready' | 'Published';
+  targetCms: string;
+  language: string;
+  format: string;
+  wordCount?: number;
+  htmlContent?: string;
+  metaDescription?: string;
 }
 
 export interface BlogPost {
   title: string;
-  content: string; // HTML or Markdown
+  content: string;
   metaDescription: string;
 }
 
 export interface CompetitorInsight {
+  url?: string;
   competitorName: string;
   industry: string;
   companySize: string;
@@ -19,6 +53,7 @@ export interface CompetitorInsight {
   strengths: string[];
   weaknesses: string[];
   topKeywords: string[];
+  contentGapOpportunity?: string;
 }
 
 export interface AuditIssue {
@@ -30,12 +65,14 @@ export interface AuditIssue {
 
 export interface PageCrawlResult {
   url: string;
-  status: number; // e.g., 200, 404, 500
-  loadTime: string; // e.g., "1.2s"
+  status: number;
+  loadTime: string;
   issues: string[];
 }
 
 export interface AuditResult {
+  domain?: string;
+  auditedAt?: string;
   score: number;
   summary: string;
   metrics: {
@@ -63,6 +100,10 @@ export interface ContentAnalysis {
     level: string;
     suggestions: string[];
   };
+  aiSearchReadiness?: {
+    answerFirstScore: string;
+    recommendations: string[];
+  };
   metaDescriptions: string[];
   checklist: string[];
   internalLinks: {
@@ -77,8 +118,41 @@ export interface ContentAnalysis {
   }[];
 }
 
+export type BillingCadence = 'monthly' | 'quarterly' | 'annual';
+export type PlanTier = 'Starter' | 'Growth Autopilot' | 'Agency Scale';
+
+export interface WorkspaceState {
+  brandProfile: BrandProfile;
+  trackedKeywords: KeywordData[];
+  autopilotQueue: AutopilotArticle[];
+  competitors: CompetitorInsight[];
+  latestAudit: AuditResult | null;
+  planTier: PlanTier;
+  billingCadence: BillingCadence;
+}
+
+export interface GscMonthlyMetric {
+  monthKey: string;
+  monthLabel: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  avgPosition: number;
+  indexedPages: number;
+  topQuery: string;
+}
+
+export interface GscSummaryData {
+  connected: boolean;
+  propertyUrl: string;
+  lastSyncedAt: string | null;
+  months: GscMonthlyMetric[];
+}
+
 export enum AppView {
+  OVERVIEW = 'overview',
   DASHBOARD = 'dashboard',
+  AUTOPILOT = 'autopilot',
   KEYWORDS = 'keywords',
   CONTENT = 'content',
   COMPETITORS = 'competitors',

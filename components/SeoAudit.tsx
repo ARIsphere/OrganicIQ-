@@ -1,320 +1,390 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, AlertCircle, CheckCircle, ChevronRight, LayoutDashboard, Globe, Link2, BarChart, AlertTriangle, FileWarning, Timer, ShieldCheck, ArrowUpRight } from 'lucide-react';
+import {
+  AlertCircle,
+  Globe,
+  AlertTriangle,
+  CheckCircle,
+  Timer,
+  Download,
+  PenTool,
+  Loader2,
+} from 'lucide-react';
+import { jsPDF } from 'jspdf';
 import { performSeoAudit } from '../services/geminiService';
-import { AuditResult } from '../types';
+import { AuditResult, WorkspaceState } from '../types';
 
-const SeoAudit: React.FC = () => {
-  const [url, setUrl] = useState('');
-  const [result, setResult] = useState<AuditResult | null>(null);
+interface SeoAuditProps {
+  workspace: WorkspaceState;
+  onSaveAudit: (audit: AuditResult) => void;
+  onDraftFromIssue: (issueTopic: string) => void;
+}
+
+const SeoAudit: React.FC<SeoAuditProps> = ({ workspace, onSaveAudit, onDraftFromIssue }) => {
+  const [url, setUrl] = useState(workspace.brandProfile.domain || '');
+  const [result, setResult] = useState<AuditResult | null>(workspace.latestAudit);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [progress, setProgress] = useState(0);
 
-  // Simulate crawl progress
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     if (loading) {
-      setProgress(0);
+      setProgress(8);
       interval = setInterval(() => {
-        setProgress(prev => {
-          if (prev >= 90) return 90; // Hold at 90 until done
-          return prev + Math.floor(Math.random() * 10);
-        });
-      }, 800);
+        setProgress((prev) => (prev >= 90 ? 90 : prev + 9));
+      }, 700);
     } else {
       setProgress(100);
     }
     return () => clearInterval(interval);
   }, [loading]);
 
-  const handleAudit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!url) return;
+  const runAuditForUrl = async (target: string) => {
+    if (!target.trim()) return;
     setLoading(true);
-    setResult(null);
+    setError('');
 
-    // Normalize URL
-    let urlToAnalyze = url.trim();
-    if (!urlToAnalyze.match(/^https?:\/\//i)) {
-      urlToAnalyze = `https://${urlToAnalyze}`;
+    let normalized = target.trim();
+    if (!normalized.match(/^https?:\/\//i)) {
+      normalized = `https://${normalized}`;
     }
 
     try {
-      const auditData = await performSeoAudit(urlToAnalyze);
+      const auditData = await performSeoAudit(normalized);
       setResult(auditData);
+      onSaveAudit(auditData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to complete site audit.');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleAudit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await runAuditForUrl(url);
+  };
+
+  const handleExportAuditPdf = () => {
+    if (!result) return;
+    const doc = new jsPDF();
+    const margin = 20;
+    const width = doc.internal.pageSize.getWidth() - margin * 2;
+    let y = 20;
+
+    doc.setFontSize(18);
+    doc.setTextColor(15, 23, 42);
+    doc.text('OrganicIQ Technical Site Audit', margin, y);
+    y += 8;
+
+    doc.setFontSize(11);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Domain: ${result.domain || url} | Health Score: ${result.score}/100`, margin, y);
+    y += 12;
+
+    doc.setFontSize(10);
+    doc.setTextColor(51, 65, 85);
+    const summaryLines = doc.splitTextToSize(result.summary, width);
+    doc.text(summaryLines, margin, y);
+    y += summaryLines.length * 5 + 10;
+
+    doc.setFontSize(13);
+    doc.setTextColor(5, 150, 105);
+    doc.text('Prioritized Issues', margin, y);
+    y += 7;
+
+    doc.setFontSize(10);
+    doc.setTextColor(51, 65, 85);
+    result.topIssues.forEach((item) => {
+      if (y > 270) {
+        doc.addPage();
+        y = 20;
+      }
+      const lines = doc.splitTextToSize(
+        `[${item.type}] ${item.issue} (${item.count} pages, ${item.difficulty} fix)`,
+        width
+      );
+      doc.text(lines, margin, y);
+      y += lines.length * 5 + 2;
+    });
+
+    doc.save(`OrganicIQ-Site-Audit-${Date.now()}.pdf`);
+  };
+
   const getScoreColor = (score: number) => {
-    if (score >= 80) return 'text-emerald-500 stroke-emerald-500';
-    if (score >= 50) return 'text-amber-500 stroke-amber-500';
-    return 'text-red-500 stroke-red-500';
+    if (score >= 80) return 'text-emerald-600 stroke-emerald-600';
+    if (score >= 50) return 'text-amber-600 stroke-amber-600';
+    return 'text-red-600 stroke-red-600';
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 py-6">
-       <div className="text-center space-y-4 mb-10">
-          <h2 className="text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight">Instant Site SEO Audit</h2>
-          <p className="text-lg text-slate-600 max-w-2xl mx-auto">
-            Enter your URL or domain to get a comprehensive organic search health score and a prioritized weekly action plan.
+    <div className="space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Technical Site Audit</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Inspect domain visibility, crawl bottlenecks, and prioritized fixes in seconds.
           </p>
+        </div>
+        {result && (
+          <button
+            type="button"
+            onClick={handleExportAuditPdf}
+            className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 text-xs font-semibold rounded-lg flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+          >
+            <Download size={14} /> Export PDF Report
+          </button>
+        )}
       </div>
 
-      {/* Search Bar */}
-      <div className="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-xl hover:shadow-2xl transition-shadow duration-300 max-w-4xl mx-auto">
-        <form onSubmit={handleAudit} className="flex flex-col md:flex-row gap-4 items-center">
-          <div className="relative flex-1 w-full">
-            <LayoutDashboard className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+      {/* Audit Input */}
+      <div className="bg-white p-6 rounded-xl border border-slate-200 space-y-4">
+        <form onSubmit={handleAudit} className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input
               type="text"
-              placeholder="Enter your website URL or domain (e.g., example.com)"
+              placeholder="Enter website domain (e.g., stripe.com)"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              className="w-full pl-12 pr-4 py-4 text-sm md:text-lg rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-600 focus:ring-4 focus:ring-blue-100 outline-none transition-all placeholder:text-slate-400"
+              className="w-full pl-10 pr-4 py-3 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:border-emerald-600 outline-none"
             />
           </div>
           <button
             type="submit"
-            disabled={loading || !url}
-            className="w-full md:w-auto bg-blue-600 text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-600/20 hover:shadow-blue-600/40 flex items-center justify-center whitespace-nowrap"
+            disabled={loading || !url.trim()}
+            className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-6 py-3 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer"
           >
-            {loading ? 'Crawling...' : 'Start Audit'}
+            {loading ? <Loader2 size={16} className="animate-spin" /> : null}
+            {loading ? 'Auditing...' : 'Run Site Audit'}
           </button>
         </form>
-        
+
         {loading && (
-          <div className="mt-6">
-            <div className="flex justify-between text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wider">
-                <span>Crawling pages...</span>
-                <span>{progress}%</span>
+          <div className="space-y-1.5">
+            <div className="flex justify-between text-xs font-mono text-slate-500 tabular-nums">
+              <span>Verifying domain visibility &amp; crawl diagnostics</span>
+              <span>{progress}%</span>
             </div>
-            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                <div 
-                    className="h-full bg-blue-600 transition-all duration-300 ease-out rounded-full relative overflow-hidden"
-                    style={{ width: `${progress}%` }}
-                >
-                    <div className="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite]"></div>
-                </div>
+            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-emerald-600 transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
             </div>
           </div>
         )}
+
+        {error && (
+          <p className="text-xs text-red-600 font-medium flex items-center gap-1.5">
+            <AlertCircle size={14} /> {error}
+          </p>
+        )}
       </div>
 
+      {!result && !loading && (
+        <div className="bg-white p-10 rounded-xl border border-slate-200 text-center space-y-3">
+          <p className="text-sm font-semibold text-slate-900">Ready to audit your website</p>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            Run a live diagnostic on your active workspace domain or test a benchmark domain.
+          </p>
+          <div className="flex flex-wrap justify-center gap-2 pt-2">
+            {['shopify.com', 'linear.app', 'webflow.com'].map((sample) => (
+              <button
+                key={sample}
+                type="button"
+                onClick={() => {
+                  setUrl(sample);
+                  runAuditForUrl(sample);
+                }}
+                className="px-3 py-1.5 text-xs font-mono text-slate-700 bg-slate-50 border border-slate-200 hover:bg-slate-100 rounded-md cursor-pointer"
+              >
+                Audit {sample}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {result && (
-        <div className="space-y-8 animate-fade-in">
-            
-           {/* Top Metrics: Search Visibility */}
-           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-               <MetricCard 
-                 label="Organic Monthly Traffic" 
-                 value={result.metrics.organicMonthlyTraffic.toLocaleString()} 
-                 icon={<Activity size={18} className="text-blue-500"/>}
-               />
-               <MetricCard 
-                 label="Organic Keywords" 
-                 value={result.metrics.organicKeywords.toLocaleString()} 
-                 icon={<Globe size={18} className="text-emerald-500"/>}
-               />
-               <MetricCard 
-                 label="Backlinks" 
-                 value={result.metrics.backlinks.toLocaleString()} 
-                 icon={<Link2 size={18} className="text-purple-500"/>}
-               />
-               <MetricCard 
-                 label="Domain Authority" 
-                 value={result.metrics.domainAuthority.toString()} 
-                 icon={<ShieldCheck size={18} className="text-amber-500"/>}
-                 subLabel="/ 100"
-               />
-           </div>
+        <div className="space-y-6">
+          {/* Visibility KPIs */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-1">
+              <p className="text-xs font-medium text-slate-500">Organic Traffic / mo</p>
+              <p className="font-mono text-2xl font-bold text-slate-900 tabular-nums">
+                {result.metrics.organicMonthlyTraffic.toLocaleString()}
+              </p>
+            </div>
+            <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-1">
+              <p className="text-xs font-medium text-slate-500">Ranking Keywords</p>
+              <p className="font-mono text-2xl font-bold text-slate-900 tabular-nums">
+                {result.metrics.organicKeywords.toLocaleString()}
+              </p>
+            </div>
+            <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-1">
+              <p className="text-xs font-medium text-slate-500">Estimated Backlinks</p>
+              <p className="font-mono text-2xl font-bold text-slate-900 tabular-nums">
+                {result.metrics.backlinks.toLocaleString()}
+              </p>
+            </div>
+            <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-1">
+              <p className="text-xs font-medium text-slate-500">Domain Authority</p>
+              <p className="font-mono text-2xl font-bold text-slate-900 tabular-nums">
+                {result.metrics.domainAuthority} <span className="text-sm font-normal text-slate-400">/ 100</span>
+              </p>
+            </div>
+          </div>
 
-           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              
-              {/* Left Col: Health Score & Breakdown */}
-              <div className="lg:col-span-1 space-y-6">
-                  {/* Main Score */}
-                  <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center relative overflow-hidden">
-                      <h3 className="text-lg font-bold text-slate-800 mb-6 absolute top-6 left-6">On-Page SEO Score</h3>
-                      
-                      <div className="relative w-48 h-48 mt-8">
-                        <svg className="w-full h-full transform -rotate-90">
-                            <circle cx="96" cy="96" r="88" stroke="currentColor" strokeWidth="12" fill="transparent" className="text-slate-100" />
-                            <circle 
-                                cx="96" cy="96" r="88" stroke="currentColor" strokeWidth="12" fill="transparent" 
-                                strokeDasharray={552} 
-                                strokeDashoffset={552 - (552 * result.score) / 100}
-                                className={`transition-all duration-1000 ease-out ${getScoreColor(result.score)}`}
-                            />
-                        </svg>
-                        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center">
-                            <span className={`text-5xl font-extrabold ${getScoreColor(result.score).split(' ')[0]}`}>{result.score}</span>
-                            <span className="block text-xs text-slate-400 font-medium uppercase mt-1">{result.score >= 80 ? 'Great' : result.score >= 50 ? 'Average' : 'Poor'}</span>
-                        </div>
-                      </div>
-                      <p className="mt-6 text-sm text-slate-500 leading-relaxed px-2">{result.summary}</p>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Score & Breakdown */}
+            <div className="lg:col-span-4 space-y-6">
+              <div className="bg-white p-6 rounded-xl border border-slate-200 flex flex-col items-center text-center space-y-4">
+                <h2 className="text-sm font-semibold text-slate-900 self-start">On-Page Health Score</h2>
+                <div className="relative w-44 h-44">
+                  <svg className="w-full h-full -rotate-90">
+                    <circle cx="88" cy="88" r="78" stroke="currentColor" strokeWidth="10" fill="transparent" className="text-slate-100" />
+                    <circle
+                      cx="88"
+                      cy="88"
+                      r="78"
+                      stroke="currentColor"
+                      strokeWidth="10"
+                      fill="transparent"
+                      strokeDasharray={490}
+                      strokeDashoffset={490 - (490 * result.score) / 100}
+                      className={`transition-all duration-700 ${getScoreColor(result.score)}`}
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className={`font-mono text-4xl font-bold tabular-nums ${getScoreColor(result.score).split(' ')[0]}`}>
+                      {result.score}
+                    </span>
+                    <span className="text-xs font-medium text-slate-500 mt-1">
+                      {result.score >= 80 ? 'Healthy' : result.score >= 50 ? 'Needs Work' : 'Critical'}
+                    </span>
                   </div>
-
-                  {/* Health Breakdown */}
-                  <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                      <h4 className="font-bold text-slate-800 mb-4">Health Breakdown</h4>
-                      <div className="space-y-4">
-                          <HealthRow 
-                             label="Critical Errors" 
-                             count={result.healthBreakdown.critical} 
-                             color="bg-red-500" 
-                             icon={<AlertCircle size={16} className="text-red-500"/>}
-                          />
-                          <HealthRow 
-                             label="Warnings" 
-                             count={result.healthBreakdown.warnings} 
-                             color="bg-amber-500" 
-                             icon={<AlertTriangle size={16} className="text-amber-500"/>}
-                          />
-                          <HealthRow 
-                             label="Recommendations" 
-                             count={result.healthBreakdown.recommendations} 
-                             color="bg-blue-500" 
-                             icon={<CheckCircle size={16} className="text-blue-500"/>}
-                          />
-                      </div>
-                  </div>
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed">{result.summary}</p>
               </div>
 
-              {/* Right Col: Issues & Pages */}
-              <div className="lg:col-span-2 space-y-8">
-                  
-                  {/* Top SEO Issues */}
-                  <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                      <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                          <h3 className="font-bold text-slate-800 flex items-center">
-                              <FileWarning className="mr-2 text-slate-500" size={20} /> Top SEO Issues
-                          </h3>
-                      </div>
-                      <div className="divide-y divide-slate-100">
-                          {result.topIssues.map((issue, i) => (
-                              <div key={i} className="p-4 hover:bg-slate-50 transition-colors flex items-start justify-between group">
-                                  <div className="flex items-start gap-3">
-                                      <div className={`mt-1 p-1 rounded-full ${
-                                          issue.type === 'Critical' ? 'bg-red-100 text-red-600' :
-                                          issue.type === 'Warning' ? 'bg-amber-100 text-amber-600' :
-                                          'bg-blue-100 text-blue-600'
-                                      }`}>
-                                          {issue.type === 'Critical' ? <AlertCircle size={16} /> :
-                                           issue.type === 'Warning' ? <AlertTriangle size={16} /> :
-                                           <CheckCircle size={16} />}
-                                      </div>
-                                      <div>
-                                          <p className="text-slate-800 font-medium group-hover:text-blue-600 transition-colors">{issue.issue}</p>
-                                          <div className="flex gap-2 mt-1">
-                                              <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">{issue.type}</span>
-                                              <span className="text-xs text-slate-300">•</span>
-                                              <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                                                  issue.difficulty === 'Easy' ? 'bg-green-100 text-green-700' :
-                                                  issue.difficulty === 'Moderate' ? 'bg-yellow-100 text-yellow-700' :
-                                                  'bg-red-100 text-red-700'
-                                              }`}>{issue.difficulty} Fix</span>
-                                          </div>
-                                      </div>
-                                  </div>
-                                  <div className="text-center min-w-[60px]">
-                                      <span className="block text-xl font-bold text-slate-700">{issue.count}</span>
-                                      <span className="text-[10px] text-slate-400 uppercase">Pages</span>
-                                  </div>
-                              </div>
-                          ))}
-                      </div>
+              <div className="bg-white p-6 rounded-xl border border-slate-200 space-y-3">
+                <h3 className="text-sm font-semibold text-slate-900">Issue Distribution</h3>
+                <div className="divide-y divide-slate-100 text-xs">
+                  <div className="py-2.5 flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-slate-700">
+                      <AlertCircle size={14} className="text-red-600" /> Critical Errors
+                    </span>
+                    <span className="font-mono font-bold text-red-700 tabular-nums">
+                      {result.healthBreakdown.critical}
+                    </span>
                   </div>
-
-                  {/* Pages Crawled */}
-                  <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                      <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-                          <h3 className="font-bold text-slate-800 flex items-center">
-                              <Globe className="mr-2 text-slate-500" size={20} /> Pages Discovered
-                          </h3>
-                      </div>
-                      <div className="overflow-x-auto">
-                          <table className="w-full text-left text-sm">
-                              <thead>
-                                  <tr className="text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100 bg-slate-50/30">
-                                      <th className="p-4">URL</th>
-                                      <th className="p-4">Status</th>
-                                      <th className="p-4">Load Time</th>
-                                      <th className="p-4">Issues Found</th>
-                                  </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-100">
-                                  {result.pagesCrawled.map((page, i) => (
-                                      <tr key={i} className="hover:bg-slate-50 transition-colors">
-                                          <td className="p-4 font-medium text-blue-600 truncate max-w-[200px] underline decoration-blue-200 underline-offset-4 cursor-pointer" title={page.url}>
-                                              {page.url.replace(/https?:\/\/[^/]+/, '') || '/'}
-                                          </td>
-                                          <td className="p-4">
-                                              <span className={`px-2 py-1 rounded text-xs font-bold ${
-                                                  page.status === 200 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
-                                              }`}>
-                                                  {page.status}
-                                              </span>
-                                          </td>
-                                          <td className="p-4 text-slate-600 flex items-center">
-                                              <Timer size={14} className="mr-1 text-slate-400"/> {page.loadTime}
-                                          </td>
-                                          <td className="p-4">
-                                              {page.issues.length > 0 ? (
-                                                  <div className="flex flex-wrap gap-1">
-                                                      {page.issues.slice(0, 2).map((issue, idx) => (
-                                                          <span key={idx} className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded border border-slate-200">
-                                                              {issue}
-                                                          </span>
-                                                      ))}
-                                                      {page.issues.length > 2 && (
-                                                          <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded">+{page.issues.length - 2}</span>
-                                                      )}
-                                                  </div>
-                                              ) : (
-                                                  <span className="text-emerald-500 text-xs flex items-center"><CheckCircle size={12} className="mr-1"/> Clean</span>
-                                              )}
-                                          </td>
-                                      </tr>
-                                  ))}
-                              </tbody>
-                          </table>
-                      </div>
+                  <div className="py-2.5 flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-slate-700">
+                      <AlertTriangle size={14} className="text-amber-600" /> Warnings
+                    </span>
+                    <span className="font-mono font-bold text-amber-700 tabular-nums">
+                      {result.healthBreakdown.warnings}
+                    </span>
                   </div>
-
+                  <div className="py-2.5 flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-slate-700">
+                      <CheckCircle size={14} className="text-emerald-600" /> Recommendations
+                    </span>
+                    <span className="font-mono font-bold text-emerald-700 tabular-nums">
+                      {result.healthBreakdown.recommendations}
+                    </span>
+                  </div>
+                </div>
               </div>
-           </div>
+            </div>
+
+            {/* Issues & Crawled Pages */}
+            <div className="lg:col-span-8 space-y-6">
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-200">
+                  <h3 className="text-sm font-semibold text-slate-900">Prioritized Action Plan</h3>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {result.topIssues.map((issue, i) => (
+                    <div key={i} className="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-slate-900">{issue.issue}</p>
+                        <p className="text-xs text-slate-500">
+                          <span
+                            className={`font-semibold ${
+                              issue.type === 'Critical'
+                                ? 'text-red-700'
+                                : issue.type === 'Warning'
+                                ? 'text-amber-700'
+                                : 'text-emerald-700'
+                            }`}
+                          >
+                            {issue.type}
+                          </span>
+                          {' · '}
+                          <span>{issue.difficulty} Fix</span>
+                          {' · '}
+                          <span className="font-mono tabular-nums">{issue.count} pages</span>
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onDraftFromIssue(`How to fix ${issue.issue} for ${result.domain || url}`)}
+                        className="px-3 py-1.5 text-xs font-semibold border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md inline-flex items-center gap-1.5 whitespace-nowrap self-start sm:self-auto cursor-pointer"
+                      >
+                        <PenTool size={12} /> Draft Fix Brief
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-200">
+                  <h3 className="text-sm font-semibold text-slate-900">Pages Crawled</h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 font-semibold text-slate-500">
+                        <th className="py-3 px-6">Path</th>
+                        <th className="py-3 px-4">HTTP</th>
+                        <th className="py-3 px-4">Load Time</th>
+                        <th className="py-3 px-6">Findings</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {result.pagesCrawled.map((page, i) => (
+                        <tr key={i} className="hover:bg-slate-50/70">
+                          <td className="py-3 px-6 font-mono text-slate-800 max-w-[220px] truncate" title={page.url}>
+                            {page.url.replace(/https?:\/\/[^/]+/, '') || '/'}
+                          </td>
+                          <td className="py-3 px-4 font-mono font-semibold tabular-nums">
+                            <span className={page.status === 200 ? 'text-emerald-700' : 'text-red-700'}>
+                              {page.status}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-mono text-slate-600 tabular-nums whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1">
+                              <Timer size={12} className="text-slate-400" /> {page.loadTime}
+                            </span>
+                          </td>
+                          <td className="py-3 px-6 text-slate-600">
+                            {page.issues.length > 0 ? page.issues.join(' · ') : 'No issues'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
   );
 };
-
-const MetricCard: React.FC<{ label: string; value: string; icon: React.ReactNode; subLabel?: string }> = ({ label, value, icon, subLabel }) => (
-    <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-        <div className="flex justify-between items-start mb-2">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{label}</span>
-            <div className="bg-slate-50 p-2 rounded-lg">{icon}</div>
-        </div>
-        <div className="flex items-baseline">
-            <span className="text-2xl font-bold text-slate-800">{value}</span>
-            {subLabel && <span className="ml-1 text-sm text-slate-400">{subLabel}</span>}
-        </div>
-    </div>
-);
-
-const HealthRow: React.FC<{ label: string; count: number; color: string; icon: React.ReactNode }> = ({ label, count, color, icon }) => (
-    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
-        <div className="flex items-center gap-3">
-            <div className="bg-white p-1.5 rounded-md border border-slate-200 shadow-sm">
-                {icon}
-            </div>
-            <span className="font-medium text-slate-700 text-sm">{label}</span>
-        </div>
-        <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold text-white ${color}`}>
-            {count}
-        </span>
-    </div>
-);
 
 export default SeoAudit;
